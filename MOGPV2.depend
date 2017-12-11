@@ -1,0 +1,29 @@
+# depslib dependency file v1.0
+1513000579 source:/home/vtmakumire/Project/MOGPV2/main.cpp
+	<iostream>
+	<assert.h>
+	<stdio.h>
+	<math.h>
+	<time.h>
+	<stdint.h>
+	<limits>
+	<CMatrix/CVector.h>
+	<CMatrix/CMatrix.h>
+	<Evolutionary/CPopulation/CPopulation.h>
+	<Evolutionary/GP/GPNodes.h>
+	<Generic/BinaryFileUtilities/BinaryFileUtilities.h>
+	<Optimisation/COBYLA/COBYLA.h>
+	<Optimisation/GoldenSectionSearch/GoldenSectionSearch.h>
+
+1489155834 source:/home/pir/Code/Optimisation/COBYLA/COBYLA.cpp
+	<stdlib.h>
+	<stdio.h>
+	<math.h>
+	<Optimisation/COBYLA/COBYLA.h>
+
+1489155834 source:/home/vtmakumire/Genetic Programming/COBYLA/COBYLA.cpp
+	<stdlib.h>
+	<stdio.h>
+	<math.h>
+	<Optimisation/COBYLA/COBYLA.h>
+
