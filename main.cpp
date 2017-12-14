@@ -212,31 +212,37 @@ int32_t COBYLA_Function(
         pdX[i + 1] = padX[i];
         }
 
+    // DEBUG
     // Calculate constraints
     padConstraints[0] = g(pdX, g_pstRootNode) + 0.0001;
     padConstraints[1] = -g(pdX, g_pstRootNode) - 0.0001;
+
+
+
+
 
     return 0;
     }
 
 //-----------------------------------------------------------------------------
 
-bool isMisclassified(CHROMOSOME pstRootNode, CColumnVector& PatternVector, const uint16_t suLabel)
+bool isMisclassified(CHROMOSOME pstRootNode, CColumnVector PatternVector, const uint16_t suLabel)
 // Returns true if the point is misclassified
     {
-    const double y = TreeEvaluate(PatternVector, pstRootNode);
+    const double dTreeOutput = TreeEvaluate(PatternVector, pstRootNode);
+    bool returnValue = false;
 
-    if((y < 0) and (suLabel != 0))
+    if((dTreeOutput < 0.0) and (suLabel != 0))
         {
-        //Misclassified pattern vector
-        return true;
+        returnValue = true;
         }
-    else if((y >= 0) and (suLabel != 1))
+
+    if((dTreeOutput >= 0.0) and (suLabel != 1))
         {
-        //Misclassified pattern vector
-        return true;
+        returnValue = true;
         }
-    return false;
+
+    return returnValue;
     }
 
 //-----------------------------------------------------------------------------
@@ -253,7 +259,10 @@ double CalculateMargin(CColumnVector& InitialVector, CColumnVector& PatternVecto
     //cout << "pattern vector is:" << PatternVector[1] << ":  " << PatternVector[2] << endl;
 //    cout << "0/1 loss = " << CalculateTrainingSetError(g_pstRootNode) << endl;
 
-    double* x = new double[nNoDimensions];
+//    double* x = new double[nNoDimensions];  //need to delete x[] if you wanna do this
+//    g_adY = new double[nNoDimensions];
+
+    double x[nNoDimensions];
     g_adY = new double[nNoDimensions];
 
     //Set up initial estimate of solution
@@ -269,7 +278,7 @@ double CalculateMargin(CColumnVector& InitialVector, CColumnVector& PatternVecto
     if(nReturnValue != 0)
         {
         cout << "Cobyla Error No." << nReturnValue << endl;
-        ErrorHandler("COBYLA returned error code");
+//        ErrorHandler("COBYLA returned error code");
         }
 
     //Calculate margin
@@ -279,7 +288,7 @@ double CalculateMargin(CColumnVector& InitialVector, CColumnVector& PatternVecto
         margin2 += ((g_adY[i] - x[i]) * (g_adY[i] - x[i]));
         }
 
-    delete[] x;
+
     return margin2;
     } // CalculateMargin()
 
@@ -438,7 +447,7 @@ CFitnessVector TrainingSetEvaluation2(const CHROMOSOME pstRootNode)
 
     //Calculate number of nodes in tree
 
-    FitnessVector[1] = NoTreeNodes(pstRootNode,true);
+    FitnessVector[1] = NoTreeNodes(pstRootNode, true);
 
     // Calculate smallest margin for that individual
     FitnessVector[2] = GetLargestMargin(pstRootNode);
@@ -475,6 +484,39 @@ inline double TestSetEvaluation(CHROMOSOME pstRootNode)
     const double dMisclassificationError = static_cast<double>(uNoErrors) / static_cast<double>(g_TestSet.NoStoredPatterns());
     return dMisclassificationError;
     } // TestEvaluation()
+
+//-----------------------------------------------------------------------------
+
+double TrainingSetError(CHROMOSOME pstRootNode)
+    {
+// Returns expected 0/1 loss over training set
+
+    const uint32_t  uVectorLength = g_TrainingSet.VectorLength();
+    CColumnVector PatternVector(uVectorLength);
+
+    uint32_t uNoErrors = 0;
+    for(uint32_t i = 1; i <= g_TrainingSet.NoStoredPatterns(); i++)
+        {
+        PatternVector = g_TrainingSet[i];
+        const double dTreeOutput = TreeEvaluate(PatternVector, pstRootNode); // return GP(x)
+        const uint16_t suTag = g_TrainingSet.Tag(i);
+
+        if((dTreeOutput < 0.0) and (suTag != 0))
+            {
+            uNoErrors++;
+            }
+
+        if((dTreeOutput >= 0.0) and (suTag != 1))
+            {
+            uNoErrors++;
+            }
+        }
+
+    const double dMisclassificationError = static_cast<double>(uNoErrors) / static_cast<double>(g_TrainingSet.NoStoredPatterns());
+    return dMisclassificationError;
+
+
+    }
 
 //-----------------------------------------------------------------------------
 
@@ -751,7 +793,7 @@ int main()
             {
             // Add both children to population
             CFitnessVector FitnessVector1 = TrainingSetEvaluation(Child1Chromosome);
-            CFitnessVector FitnessVector2 = TrainingSetEvaluation(Child1Chromosome);
+            CFitnessVector FitnessVector2 = TrainingSetEvaluation(Child2Chromosome);
             Population.AppendChildren(Child1Chromosome, FitnessVector1, Child2Chromosome, FitnessVector2);
             }
 
@@ -781,7 +823,7 @@ int main()
             }
 
         }
-    while(dLargestTrainError > 0.5);
+    while(/*dLargestTrainError >= 0.5 and */ uNoIterations <= 20000);
 
     cout << "The worst individual in the population has error of: " << dLargestTrainError << endl;
 
@@ -808,23 +850,19 @@ int main()
     for(uint32_t i = 1; i <= g_uPopulationSize; i++)
         {
         cout << "Recalculating fitness for " << i << endl;  // DEBUG
-        cout << "#nodes before (noTreeNodes) = " << NoTreeNodes(Population[i],true) << endl;
 
-
-        cout << "#nodes before (Population.f) = " << Population.Fitness(i)[1] << endl;
-
-        //const CHROMOSOME pstRootNode = Population[i];
-
+        cout << " Training set error (before) = " << TrainingSetError(Population[i]) << endl;
         Population.Fitness(i) = TrainingSetEvaluation2(Population[i]);
+        cout << " Training set (after) = " << TrainingSetError(Population[i]) << endl;
+        cout << "The margin for #"<< i << " is:"<< Population.Fitness2(i) << endl;
 
-        cout << "#nodes after (noTreeNodes) = " << NoTreeNodes(Population[i],true) << endl;
 
-        cout << "#nodes after (Population.f) = " << Population.Fitness(i)[1] << endl;
+
 
         }
 
     // Sort the population
-    Population.MOSort(enASCENDING);
+    //Population.MOSort(enASCENDING);
 
     // Print intermediate population
     cout << "intermediate population with margin..." << endl;
@@ -841,7 +879,7 @@ int main()
         }
     cout << endl;
 
-    // exit(0);
+    //exit(0);
 
     uNoIterations = 0;
     g_uNoTreeEvaluations = 0;
@@ -900,7 +938,7 @@ int main()
             {
             // Add both children to population
             CFitnessVector FitnessVector1 = TrainingSetEvaluation2(Child1Chromosome);
-            CFitnessVector FitnessVector2 = TrainingSetEvaluation2(Child1Chromosome);
+            CFitnessVector FitnessVector2 = TrainingSetEvaluation2(Child2Chromosome);
             Population.AppendChildren(Child1Chromosome, FitnessVector1, Child2Chromosome, FitnessVector2);
             }
 
@@ -998,6 +1036,8 @@ int main()
     strcpy(szStringForTree1, "");
     TreeToString(pLargestMargin, szStringForTree1, enTreeToStringMaths);
     cout << szStringForTree1 << endl;
+
+    cout << endl;
 
     // Tidy-up
     delete pMutationSelector;
