@@ -45,7 +45,7 @@ CMatrix* g_pDistanceMatrix;
 const int32_t g_nNoConstraints = 2;
 double g_dRhoBegin = 0.1;
 double g_dRhoEnd = 1e-6;
-int32_t g_nMessageLevel = 1;
+int32_t g_nMessageLevel = 0;
 int32_t g_nFunctionEvaluations = 3500;
 
 const uint32_t g_uNoInitialisationRepeats = 1;
@@ -213,8 +213,8 @@ int32_t COBYLA_Function(
         }
 
     // Calculate constraints
-    padConstraints[0] = g(pdX, g_pstRootNode);
-    padConstraints[1] = -g(pdX, g_pstRootNode);
+    padConstraints[0] = g(pdX, g_pstRootNode) + 0.0001;
+    padConstraints[1] = -g(pdX, g_pstRootNode) - 0.0001;
 
     return 0;
     }
@@ -248,9 +248,9 @@ double CalculateMargin(CColumnVector& InitialVector, CColumnVector& PatternVecto
     const int32_t nNoDimensions = g_TrainingSet.VectorLength();
 
     // DEBUG
-    cout << endl;
-    cout << "initial vector is:" << InitialVector[1] << ":  " << InitialVector[2] << endl;
-    cout << "pattern vector is:" << PatternVector[1] << ":  " << PatternVector[2] << endl;
+    //cout << endl;
+    //cout << "initial vector is:" << InitialVector[1] << ":  " << InitialVector[2] << endl;
+    //cout << "pattern vector is:" << PatternVector[1] << ":  " << PatternVector[2] << endl;
 //    cout << "0/1 loss = " << CalculateTrainingSetError(g_pstRootNode) << endl;
 
     double* x = new double[nNoDimensions];
@@ -263,14 +263,14 @@ double CalculateMargin(CColumnVector& InitialVector, CColumnVector& PatternVecto
         g_adY[i] = PatternVector[i + 1];
         }
 
-    int32_t nReturnValue = COBYLA(nNoDimensions, g_nNoConstraints, x, g_dRhoBegin, g_dRhoEnd, g_nMessageLevel, &g_nFunctionEvaluations, COBYLA_Function, NULL);
+    int32_t nLocalMaxFnEvaluations = g_nFunctionEvaluations;    // HACK!
+    int32_t nReturnValue = COBYLA(nNoDimensions, g_nNoConstraints, x, g_dRhoBegin, g_dRhoEnd, g_nMessageLevel, &nLocalMaxFnEvaluations, COBYLA_Function, NULL);
 
     if(nReturnValue != 0)
         {
-        cout << "Cobyla Error" << endl;
-        //ErrorHandler("COBYLA returned error code");
+        cout << "Cobyla Error No." << nReturnValue << endl;
+        ErrorHandler("COBYLA returned error code");
         }
-
 
     //Calculate margin
     double margin2 = 0.0;
@@ -292,7 +292,6 @@ double GetLargestMargin(const CHROMOSOME pstRootNode)
     const uint32_t uNoData = g_TrainingSet.NoStoredPatterns();
     g_pstRootNode = pstRootNode;
 
-
     // Find misclassified points
     bool abCorrectlyClassified[uNoData];
 
@@ -300,15 +299,16 @@ double GetLargestMargin(const CHROMOSOME pstRootNode)
         {
         CColumnVector x = g_TrainingSet[i];
         const uint16_t suLabel = g_TrainingSet.Tag(i);
-
         abCorrectlyClassified[i - 1] = !(isMisclassified(pstRootNode, x, suLabel));
 
         }
 
+
+
+
     //Find margin for misclassified points
     for(uint32_t i = 1; i <= uNoData; i++)
         {
-
         uint32_t uNearestNeighbourIndex = UINT_MAX;
         if(abCorrectlyClassified[i - 1] == false)
             {
@@ -316,30 +316,27 @@ double GetLargestMargin(const CHROMOSOME pstRootNode)
             double dNearestNeighbourDistance = INFINITY;
             for(uint32_t j = 1; j <= uNoData; j++)
                 {
-                double dDistance = (*g_pDistanceMatrix)[i][j];
-                if((abCorrectlyClassified[j - 1] == true) and (i != j) and (g_TrainingSet.Tag(i) == g_TrainingSet.Tag(j)) and (dDistance < dNearestNeighbourDistance))
+                if(i != j)
                     {
-                    dNearestNeighbourDistance = dDistance;
-                    uNearestNeighbourIndex = j;
+                    if((abCorrectlyClassified[j - 1] == true) and (g_TrainingSet.Tag(i) == g_TrainingSet.Tag(j)))
+                        {
+                        const double dDistance = (*g_pDistanceMatrix)[i][j];
+                        if(dDistance < dNearestNeighbourDistance)
+                            {
+                            dNearestNeighbourDistance = dDistance;
+                            uNearestNeighbourIndex = j;
+                            }
+                        }
                     }
                 }
-
             }
-
-//        if(uNearestNeighbourIndex == UINT_MAX){
-//            ErrorHandler("No misclassified  points in the data set");
-//            return dLargestMargin;
-//
-//        }
 
         // Calculate initial estimate of boundary vector
         if((i != uNearestNeighbourIndex) and (uNearestNeighbourIndex != UINT_MAX))
             {
-            double dFuncMin;
             CColumnVector TargetPoint = g_TrainingSet[i];
-
-
             CColumnVector NearestPoint = g_TrainingSet[uNearestNeighbourIndex];
+            double dFuncMin;
             const double dAlpha = GoldenSectionLineSearch(TargetPoint, NearestPoint, g2, static_cast<void*>(g_pstRootNode), dFuncMin);
             CColumnVector InitialVector = (TargetPoint * (1.0 - dAlpha)) + (dAlpha * NearestPoint);    // Initial point on decision surface
 
@@ -348,17 +345,17 @@ double GetLargestMargin(const CHROMOSOME pstRootNode)
                 {
                 dLargestMargin = margin;
                 }
-
-
-
             }
+        } // for-loop
 
+
+    // DEBUG
+    if(dLargestMargin == 0)
+        {
+        cout << "Classifier has no correctly classified points" << endl;
         }
 
     return dLargestMargin;
-
-
-
     } // GetLargestMargin()
 
 //-----------------------------------------------------------------------------
@@ -396,7 +393,7 @@ inline double CalculateTrainingSetError(const double dThreshold)
 
 
 CFitnessVector TrainingSetEvaluation(const CHROMOSOME pstRootNode)
-// Returns fitness vector
+// Returns fitness vector: node count & 0/1 loss
     {
     g_uNoTreeEvaluations++;
 
@@ -434,21 +431,20 @@ CFitnessVector TrainingSetEvaluation(const CHROMOSOME pstRootNode)
 //-----------------------------------------------------------------------------
 
 CFitnessVector TrainingSetEvaluation2(const CHROMOSOME pstRootNode)
-// Returns fitness vector
+// Returns fitness vector: node count & largest margin
     {
     g_uNoTreeEvaluations++;
     CFitnessVector FitnessVector;
 
     //Calculate number of nodes in tree
-    FitnessVector[1] = NoTreeNodes(pstRootNode, true);
+
+    FitnessVector[1] = NoTreeNodes(pstRootNode,true);
 
     // Calculate smallest margin for that individual
     FitnessVector[2] = GetLargestMargin(pstRootNode);
 
     return FitnessVector;
-    } // TrainingSetEvaluation()
-
-
+    } // TrainingSetEvaluation2()
 
 //-----------------------------------------------------------------------------
 
@@ -785,15 +781,67 @@ int main()
             }
 
         }
-    while((g_uNoTreeEvaluations < g_uMaxNoTreeEvaluations) or (dLargestTrainError >= 0.5));
+    while(dLargestTrainError > 0.5);
 
     cout << "The worst individual in the population has error of: " << dLargestTrainError << endl;
 
+    // Print intermediate population
+    cout << "intermediate population..." << endl;
+    for(uint32_t i = 1; i <= g_uPopulationSize; i++)
+        {
+        cout << i
+             << " -> ("
+             << Population.Fitness(i)[1]
+             << ", "
+             << Population.Fitness(i)[2]
+             << ")   rank = "
+             << Population.Rank(i)
+             << endl;
+        }
+    cout << endl;
 
     //---------------------------------------------------------------------------------------------
     // Run evolutionary loop using margin to evaluate training set
     // FitnessVector[2] is now largest margin
 
+    // Recalculate fitness values
+    for(uint32_t i = 1; i <= g_uPopulationSize; i++)
+        {
+        cout << "Recalculating fitness for " << i << endl;  // DEBUG
+        cout << "#nodes before (noTreeNodes) = " << NoTreeNodes(Population[i],true) << endl;
+
+
+        cout << "#nodes before (Population.f) = " << Population.Fitness(i)[1] << endl;
+
+        //const CHROMOSOME pstRootNode = Population[i];
+
+        Population.Fitness(i) = TrainingSetEvaluation2(Population[i]);
+
+        cout << "#nodes after (noTreeNodes) = " << NoTreeNodes(Population[i],true) << endl;
+
+        cout << "#nodes after (Population.f) = " << Population.Fitness(i)[1] << endl;
+
+        }
+
+    // Sort the population
+    Population.MOSort(enASCENDING);
+
+    // Print intermediate population
+    cout << "intermediate population with margin..." << endl;
+    for(uint32_t i = 1; i <= g_uPopulationSize; i++)
+        {
+        cout << i
+             << " -> ("
+             << Population.Fitness(i)[1]
+             << ", "
+             << Population.Fitness(i)[2]
+             << ")   rank = "
+             << Population.Rank(i)
+             << endl;
+        }
+    cout << endl;
+
+    // exit(0);
 
     uNoIterations = 0;
     g_uNoTreeEvaluations = 0;
@@ -877,7 +925,6 @@ int main()
     while(g_uNoTreeEvaluations < g_uMaxNoTreeEvaluations);
 
 
-
     // End of genetic evolution loop
     //-------------------------------------------------------
 
@@ -929,7 +976,7 @@ int main()
     cout << endl;
 
     cout << "Index of best test individual = " << uMinTestIndex << endl;
-    cout << "Best test individual has a margin = " << GetLargestMargin(Population[uMinTestIndex]);
+    cout << "Best test individual has a margin = " << Population.Fitness2(uMinTestIndex) << endl;
 
     // Output best test
     stGPNode_t* pBestTree = Population[uMinTestIndex];
@@ -943,7 +990,7 @@ int main()
     cout << "Index of (minimum) largest margin individual = " << uMinLargestMarginIndex << endl;
     cout << "It has a training error of = " << TrainingSetEvaluation(Population[uMinLargestMarginIndex])[2] << endl;
     cout << "It has a test error of = " << TestSetEvaluation(Population[uMinLargestMarginIndex]) << endl;
-    cout << "It has a margin of = " << GetLargestMargin(Population[uMinLargestMarginIndex]);
+    cout << "It has a margin of = " << Population.Fitness2(uMinLargestMarginIndex) << endl;
 
     // Output minimum largest margin tree
     stGPNode_t* pLargestMargin = Population[uMinLargestMarginIndex];
