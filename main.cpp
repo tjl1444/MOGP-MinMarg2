@@ -409,7 +409,7 @@ double TrainingSetError(CHROMOSOME pstRootNode)
 
 //-----------------------------------------------------------------------------
 
-double CalculateMargin(CColumnVector& InitialVector, CColumnVector& PatternVector)
+double CalculateMargin(CColumnVector& InitialVector, CColumnVector& PatternVector, CColumnVector& PointAcrossBoundary)
 // Returns square of the Margin for the PatternVector which is a misclassified point
     {
     //Initialize COBYLA parameters
@@ -433,8 +433,8 @@ double CalculateMargin(CColumnVector& InitialVector, CColumnVector& PatternVecto
     int32_t nReturnValue = COBYLA(nNoDimensions, g_nNoConstraints, x, g_dRhoBegin, g_dRhoEnd, g_nMessageLevel, &g_nFunctionEvaluations, COBYLA_Function, NULL);
     g_nFunctionEvaluations = 100000;
     //cout << "FnEval After:" << nLocalMaxFnEvaluations << endl;
-    int counter = 0;
-    while(nReturnValue != 0)
+
+    if(nReturnValue != 0)
         {
         //g_nMessageLevel = 1;
 
@@ -447,37 +447,18 @@ double CalculateMargin(CColumnVector& InitialVector, CColumnVector& PatternVecto
             nReturnValue = COBYLA(nNoDimensions, g_nNoConstraints, x, g_dRhoBegin, g_dRhoEnd, g_nMessageLevel, &g_nFunctionEvaluations, COBYLA_Function, NULL);
             g_nFunctionEvaluations = 100000;
 
-            if(nReturnValue != 0)
-                {
-                //DEBUG
-                cout << "Cobyla Error No." << nReturnValue << endl;
-                cout << "TreeEvaluate - Initial: " << TreeEvaluate(InitialVector, g_pstRootNode) << endl;
+            if(nReturnValue != 0){
+                // use DE to find Initial Vector
+                InitialVector = GetInitialVector(PatternVector,PointAcrossBoundary);
+                margin2 = CalculateMargin(InitialVector,PatternVector,PointAcrossBoundary);
+                g_nFunctionEvaluations = 100000;
 
-                cout << "The point we are calculating distance from X1:" << PatternVector[1] << endl;
-                cout << "The point we are calculating distance from X2:" << PatternVector[2] << endl;
-
-                cout << "Starting point X1::" << InitialVector[1] << endl;
-                cout << "Starting point X2:" << InitialVector[2] << endl;
-
-                cout << "Optimisation endpoint X1: " << x[0] << endl;
-                cout << "Optimisation endpoint X2: " << x[1] << endl;
-
-                // DEBUG
-                for(uint32_t i = 0; i < (static_cast<uint32_t>(nNoDimensions)); i++)
-                    {
-                    InitialVector[i + 1] = x[i];
-                    }
-                cout << "TreeEvaluate - after COBYLA: " << TreeEvaluate(InitialVector, g_pstRootNode) << endl;
-                DumpDecisionBoundary(g_pstRootNode,"RipleyDecisionBoundary.txt");
-
-                //Output Tree
-//                char szStringForTree[4096];
-//                strcpy(szStringForTree, "");
-//                TreeToString(g_pstRootNode, szStringForTree, enTreeToStringMaths);
-//                cout << szStringForTree << endl;
-                margin2 = INFINITY;
-                return margin2;
+                if(margin2 == INFINITY){
+                    return margin2;
                 }
+            }
+
+
 
             }
 
@@ -573,26 +554,23 @@ double GetLargestMargin(const CHROMOSOME pstRootNode)
                     CColumnVector PointAcrossBoundary = g_TrainingSet[j];
 
 
-                    //double dFuncMin;
-                    //const double dAlpha = GoldenSectionLineSearch(TargetPoint, PointAcrossBoundary, g2, static_cast<void*>(g_pstRootNode), dFuncMin);
+                    double dFuncMin;
+                    const double dAlpha = GoldenSectionLineSearch(TargetPoint, PointAcrossBoundary, g2, static_cast<void*>(g_pstRootNode), dFuncMin);
 
                     // DEBUG - May help to speed up optimisation as GSS is returning bad points
-//                    if((dFuncMin > 0.1) and (j == uNoData))
-//                    {
-//                        cout << "The function minimum is: " << dFuncMin << endl;
-//                        cout << "The alpha value is: " << dAlpha << endl;
-//
-//                    }
-                   // CColumnVector InitialVector = (TargetPoint * (1.0 - dAlpha)) + (dAlpha * PointAcrossBoundary);    // Initial point on decision surface
+                    if((dFuncMin > 0.1) and (j == uNoData))
+                    {
+                        cout << "The function minimum is: " << dFuncMin << endl;
+                        cout << "The alpha value is: " << dAlpha << endl;
 
-                    CColumnVector InitialVector = GetInitialVector(TargetPoint,PointAcrossBoundary);
-                    double dFuncMin = TreeEvaluate(InitialVector,g_pstRootNode);
+                    }
+                   CColumnVector InitialVector = (TargetPoint * (1.0 - dAlpha)) + (dAlpha * PointAcrossBoundary);    // Initial point on decision surface
 
 
 
                     //Calculate the margin and compare with current largest margin
                     double dInitialMargin = (p2_Norm(TargetPoint - InitialVector)) * (p2_Norm(TargetPoint - InitialVector));
-                    double dMargin = CalculateMargin(InitialVector, TargetPoint);
+                    double dMargin = CalculateMargin(InitialVector,TargetPoint,PointAcrossBoundary);
 
                     if((dMargin == INFINITY) and (j == uNoData))
                         {
