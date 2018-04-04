@@ -26,12 +26,11 @@
 #include <Optimisation/COBYLA/COBYLA.h>
 #include <Optimisation/GoldenSectionSearch/GoldenSectionSearch.h>
 
-using namespace std;
-/**
-TODO:
-Calculate distance matrix and starting points
+#include <Evolutionary/DE/DifferentialEvolution.h>
+#include <gsl/gsl_math.h>
 
-**/
+using namespace std;
+
 
 // Globals
 
@@ -269,6 +268,94 @@ int32_t COBYLA_Function(
 
 //-----------------------------------------------------------------------------
 
+void constraintFunction (CColumnVector& ConstraintValues, CColumnVector& x, void* const pvParameters){
+    // Update constraint values
+    ConstraintValues[1] = g(x,g_pstRootNode);
+    return;
+}
+
+CColumnVector GetInitialVector(CColumnVector TargetPoint, CColumnVector PointAcrossBoundary){
+    //Set Parameters
+    const uint32_t uD = g_TrainingSet.VectorLength();
+    const uint32_t uMaxIterations = 1000;
+    const double dTargetFitness = 0;
+    const double dF = 0.5;  // WHAT IS THIS?
+    const double dCR = 0.9; // WHAT IS THIS?
+
+    // Set ranges of initial population
+    double* padLowerRange = new double[uD + 1];
+    double* padUpperRange = new double[uD + 1];
+    padLowerRange[0] = NAN;
+    padUpperRange[0] = NAN;
+
+    for (uint32_t i = 1; i <= uD; i++){
+
+        if(TargetPoint[i] > PointAcrossBoundary[i]){
+            padUpperRange[i] = TargetPoint[i];
+            padLowerRange[i] = PointAcrossBoundary[i];
+
+        }
+        else{
+            padUpperRange[i] = PointAcrossBoundary[i];
+            padLowerRange[i] = TargetPoint[i];
+
+        }
+    }
+
+
+
+
+
+
+
+    // Set function pointers
+    pfnObjective_t pfnObjective = g2;
+    void* const pvObjectiveParameters = static_cast<void*>(g_pstRootNode);
+
+    // Configure constraints
+    const uint32_t uNoConstraints = 1;
+    CColumnVector ConstraintValues(uNoConstraints);
+    pfnConstraintFn_t pfnConstraintFn = constraintFunction; // NEED constaint function??? like g(padX)
+
+    double dEpsilon = 1e-4; // Tolerance for constraint value
+    void* const pvParameters = static_cast<void*>(&dEpsilon);
+
+    //-------------------------------------------
+
+    CColumnVector InitialVector(uD);
+    const uint32_t uPopulationSize = 500 * uD;  // No. of population members
+    uint32_t uNoIterationsReqd;
+    double dMinFitnessAchieved;
+
+    const bool bReturn = ConstrainedDifferentialEvolutionBin(pfnObjective,
+                         pvObjectiveParameters,
+                         uD,
+                         uPopulationSize,
+                         padLowerRange,
+                         padUpperRange,
+                         pfnConstraintFn,
+                         ConstraintValues,
+                         pvParameters,
+                         uMaxIterations,
+                         dTargetFitness,
+                         dF,
+                         dCR,
+                         uNoIterationsReqd,
+                         dMinFitnessAchieved,
+                         InitialVector);
+
+
+    // Tidy-up
+    delete [] padLowerRange;
+    delete [] padUpperRange;
+
+    return InitialVector;
+
+
+}
+
+//-----------------------------------------------------------------------------
+
 bool isMisclassified(CHROMOSOME pstRootNode, CColumnVector PatternVector, const uint16_t suLabel)
 // Returns true if the point is misclassified
     {
@@ -484,8 +571,10 @@ double GetLargestMargin(const CHROMOSOME pstRootNode)
                     //Calculate initial estimate of boundary vector
                     CColumnVector TargetPoint = g_TrainingSet[i];
                     CColumnVector PointAcrossBoundary = g_TrainingSet[j];
-                    double dFuncMin;
-                    const double dAlpha = GoldenSectionLineSearch(TargetPoint, PointAcrossBoundary, g2, static_cast<void*>(g_pstRootNode), dFuncMin);
+
+
+                    //double dFuncMin;
+                    //const double dAlpha = GoldenSectionLineSearch(TargetPoint, PointAcrossBoundary, g2, static_cast<void*>(g_pstRootNode), dFuncMin);
 
                     // DEBUG - May help to speed up optimisation as GSS is returning bad points
 //                    if((dFuncMin > 0.1) and (j == uNoData))
@@ -494,7 +583,11 @@ double GetLargestMargin(const CHROMOSOME pstRootNode)
 //                        cout << "The alpha value is: " << dAlpha << endl;
 //
 //                    }
-                    CColumnVector InitialVector = (TargetPoint * (1.0 - dAlpha)) + (dAlpha * PointAcrossBoundary);    // Initial point on decision surface
+                   // CColumnVector InitialVector = (TargetPoint * (1.0 - dAlpha)) + (dAlpha * PointAcrossBoundary);    // Initial point on decision surface
+
+                    CColumnVector InitialVector = GetInitialVector(TargetPoint,PointAcrossBoundary);
+                    double dFuncMin = TreeEvaluate(InitialVector,g_pstRootNode);
+
 
 
                     //Calculate the margin and compare with current largest margin
@@ -753,7 +846,7 @@ int main(int argc, char* argv[])
 
 
     // Process command line
-    const uint32_t g_uNoInitialisationRepeats = atoi(argv[1]);  // Causes Segmentation fault if you run from IDE
+    const uint32_t g_uNoInitialisationRepeats = 1;//atoi(argv[1]);  // Causes Segmentation fault if you run from IDE
 
     if(g_uNoInitialisationRepeats < 1)
         {
