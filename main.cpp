@@ -358,6 +358,7 @@ double CalculateMargin(CColumnVector& InitialVector, CColumnVector& PatternVecto
         if(nReturnValue != 0)
             {
             nReturnValue = COBYLA(nNoDimensions, g_nNoConstraints, x, g_dRhoBegin, g_dRhoEnd, g_nMessageLevel, &g_nFunctionEvaluations, COBYLA_Function, NULL);
+            g_nFunctionEvaluations = 100000;
 
             if(nReturnValue != 0)
                 {
@@ -514,6 +515,7 @@ double GetLargestMargin(const CHROMOSOME pstRootNode)
                         {
                         if(dMargin <= dInitialMargin)
                             {
+                            // This only works if the the optimisation problem is non-convex
                             dLargestMargin = dMargin;
                             //end loop
                             break;
@@ -534,7 +536,7 @@ double GetLargestMargin(const CHROMOSOME pstRootNode)
                         {
                         cout << "The point chosen across the boundary X1: " << PointAcrossBoundary[1] << endl;
                         cout << "The point chosen across the boundary X2: " << PointAcrossBoundary[2] << endl;
-                        exit(0);
+//                        exit(0);
                         }
 
 
@@ -746,8 +748,8 @@ int main(int argc, char* argv[])
     std::fstream GPResults;
     std::fstream GPTrees;
 
-    GPResults.open("GaussianImproved.txt", std::fstream::in | std::fstream::out | std::fstream::app);
-    GPTrees.open("GaussianImprovedTrees.txt", std::fstream::in | std::fstream::out | std::fstream::app);
+    GPResults.open("RipleyResults.txt", std::fstream::in | std::fstream::out | std::fstream::app);
+    GPTrees.open("RipleyTrees.txt", std::fstream::in | std::fstream::out | std::fstream::app);
 
 
     // Process command line
