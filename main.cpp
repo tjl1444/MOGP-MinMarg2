@@ -37,8 +37,9 @@ using namespace std;
 CHROMOSOME g_pstRootNode;
 double* g_adY;
 CMatrix* g_pDistanceMatrix;
+int g_counter = 0;
 
-
+int g_dumpCounter = 0;
 
 //-----------------------------------------------------------------------------
 // Global constants
@@ -268,16 +269,18 @@ int32_t COBYLA_Function(
 
 //-----------------------------------------------------------------------------
 
-void constraintFunction (CColumnVector& ConstraintValues, CColumnVector& x, void* const pvParameters){
+void constraintFunction(CColumnVector& ConstraintValues, CColumnVector& x, void* const pvParameters)
+    {
     // Update constraint values
-    ConstraintValues[1] = g(x,g_pstRootNode);
+    ConstraintValues[1] = g(x, g_pstRootNode);
     return;
-}
+    }
 
-CColumnVector GetInitialVector(CColumnVector TargetPoint, CColumnVector PointAcrossBoundary){
+CColumnVector GetInitialVector(CColumnVector TargetPoint, CColumnVector PointAcrossBoundary)
+    {
     //Set Parameters
     const uint32_t uD = g_TrainingSet.VectorLength();
-    const uint32_t uMaxIterations = 1000;
+    const uint32_t uMaxIterations = 100;
     const double dTargetFitness = 0;
     const double dF = 0.5;  // WHAT IS THIS?
     const double dCR = 0.9; // WHAT IS THIS?
@@ -288,19 +291,22 @@ CColumnVector GetInitialVector(CColumnVector TargetPoint, CColumnVector PointAcr
     padLowerRange[0] = NAN;
     padUpperRange[0] = NAN;
 
-    for (uint32_t i = 1; i <= uD; i++){
+    for(uint32_t i = 1; i <= uD; i++)
+        {
 
-        if(TargetPoint[i] > PointAcrossBoundary[i]){
+        if(TargetPoint[i] > PointAcrossBoundary[i])
+            {
             padUpperRange[i] = TargetPoint[i];
             padLowerRange[i] = PointAcrossBoundary[i];
 
-        }
-        else{
+            }
+        else
+            {
             padUpperRange[i] = PointAcrossBoundary[i];
             padLowerRange[i] = TargetPoint[i];
 
+            }
         }
-    }
 
 
 
@@ -344,6 +350,14 @@ CColumnVector GetInitialVector(CColumnVector TargetPoint, CColumnVector PointAcr
                          dMinFitnessAchieved,
                          InitialVector);
 
+    if(bReturn != 0)
+        {
+        cout << "Return from using DE: " << bReturn << endl;
+        cout << endl;
+        }
+
+
+
 
     // Tidy-up
     delete [] padLowerRange;
@@ -352,7 +366,7 @@ CColumnVector GetInitialVector(CColumnVector TargetPoint, CColumnVector PointAcr
     return InitialVector;
 
 
-}
+    }
 
 //-----------------------------------------------------------------------------
 
@@ -429,10 +443,12 @@ double CalculateMargin(CColumnVector& InitialVector, CColumnVector& PatternVecto
 
     int32_t nLocalMaxFnEvaluations = g_nFunctionEvaluations;    // HACK!
     g_nFunctionEvaluations = 100000;
-    //cout << "FnEval Before:" <<  nLocalMaxFnEvaluations << endl;
+
     int32_t nReturnValue = COBYLA(nNoDimensions, g_nNoConstraints, x, g_dRhoBegin, g_dRhoEnd, g_nMessageLevel, &g_nFunctionEvaluations, COBYLA_Function, NULL);
     g_nFunctionEvaluations = 100000;
-    //cout << "FnEval After:" << nLocalMaxFnEvaluations << endl;
+
+
+
 
     if(nReturnValue != 0)
         {
@@ -447,16 +463,81 @@ double CalculateMargin(CColumnVector& InitialVector, CColumnVector& PatternVecto
             nReturnValue = COBYLA(nNoDimensions, g_nNoConstraints, x, g_dRhoBegin, g_dRhoEnd, g_nMessageLevel, &g_nFunctionEvaluations, COBYLA_Function, NULL);
             g_nFunctionEvaluations = 100000;
 
-            if(nReturnValue != 0){
-                // use DE to find Initial Vector
-                InitialVector = GetInitialVector(PatternVector,PointAcrossBoundary);
-                margin2 = CalculateMargin(InitialVector,PatternVector,PointAcrossBoundary);
-                g_nFunctionEvaluations = 100000;
+            // DEBUG - COBYLA problems with point from DE (Now that would be a problem)
+            if((g_counter == 1) and (nReturnValue != 0))
+                {
+                cout << "Point from DE failed 3 times and is now going to use DE again!!!" << endl;
+                cout << "The Return Value from COBYLA is (using DE): " << nReturnValue << endl;
+                cout << "TreeEvaluate - BEFORE COBYLA (DE): " << TreeEvaluate(InitialVector, g_pstRootNode) << endl;
 
-                if(margin2 == INFINITY){
-                    return margin2;
+                cout << "Point chosen to find margin from X1: " << PatternVector[1] << endl;
+                cout << "Point chosen to find margin from X2: " << PatternVector[2] << endl;
+
+                cout << "Point Across Boundary X1: " << PointAcrossBoundary[1] << endl;
+                cout << "Point Across Boundary X2: " << PointAcrossBoundary[2] << endl;
+
+                cout << "The solution from DE X1: "  << InitialVector[1] << endl;
+                cout << "The solution from DE X2: "  << InitialVector[2] << endl;
+
+                for(uint32_t i = 0; i < (static_cast<uint32_t>(nNoDimensions)); i++)
+                    {
+                    InitialVector[i + 1] = x[i];
+                    }
+
+                cout << "The solution from COBYLA (using DE InitialVector) X1: "  << InitialVector[1] << endl;
+                cout << "The solution from COBYLA (using DE InitialVector) X2: "  << InitialVector[2] << endl;
+                cout << "TreeEvaluate - after COBYLA (DE): " << TreeEvaluate(InitialVector, g_pstRootNode) << endl;
+                cout << endl;
+
+
+                g_dumpCounter++;
+                if(g_dumpCounter == 1)
+                    {
+                    DumpDecisionBoundary(g_pstRootNode, "RipleyDecisionBoundary.txt");
+                    }
+
+
                 }
-            }
+
+
+            if(nReturnValue != 0)
+                {
+                // use DE to find Initial Vector
+                if(g_counter == 0)
+                    {
+                    g_counter++;
+                    InitialVector = GetInitialVector(PatternVector, PointAcrossBoundary);
+                    margin2 = CalculateMargin(InitialVector, PatternVector, PointAcrossBoundary);
+
+                    if(margin2 == 0.0)
+                        {
+                        cout << "This tree has a margin of 0 and the training error is: " << TrainingSetError(g_pstRootNode) << endl;
+                        margin2 = INFINITY;
+                        }
+
+                    g_nFunctionEvaluations = 100000;
+                    return margin2;
+                    }
+
+
+                if(g_counter == 1)
+                    {
+                    g_counter = 0;
+
+                    //Calculate margin using DE result
+                    for(uint32_t i = 1; i <= (static_cast<uint32_t>(nNoDimensions)); i++)
+                        {
+                        margin2 += ((x[i-1] - PatternVector[i]) * (x[i-1] - PatternVector[i]));
+                        }
+
+                    cout << "The margin is (DE):" << margin2 << endl;
+
+
+                    return margin2;
+                    }
+
+
+                }
 
 
 
@@ -472,14 +553,6 @@ double CalculateMargin(CColumnVector& InitialVector, CColumnVector& PatternVecto
         margin2 += ((x[i] - g_adY[i]) * (x[i] - g_adY[i]));
         }
 
-    // DEBUG - Check accuracy of COBYLA solution
-//    double dCobylaResult = TreeEvaluate(InitialVector, g_pstRootNode);
-//    if(dCobylaResult > 0.01)
-//        {
-//        cout << "COBYLA Accuracy " << dCobylaResult << endl;
-//        //exit(0);
-//        }
-//
 
 
 
@@ -558,31 +631,33 @@ double GetLargestMargin(const CHROMOSOME pstRootNode)
                     const double dAlpha = GoldenSectionLineSearch(TargetPoint, PointAcrossBoundary, g2, static_cast<void*>(g_pstRootNode), dFuncMin);
 
                     // DEBUG - May help to speed up optimisation as GSS is returning bad points
-                    if((dFuncMin > 0.1) and (j == uNoData))
-                    {
-                        cout << "The function minimum is: " << dFuncMin << endl;
-                        cout << "The alpha value is: " << dAlpha << endl;
+//                    if((dFuncMin > 0.1) and (j == uNoData))
+//                        {
+//                        cout << "The function minimum is: " << dFuncMin << endl;
+//                        cout << "The alpha value is: " << dAlpha << endl;
+//
+//                        }
 
-                    }
-                   CColumnVector InitialVector = (TargetPoint * (1.0 - dAlpha)) + (dAlpha * PointAcrossBoundary);    // Initial point on decision surface
+                    CColumnVector InitialVector = (TargetPoint * (1.0 - dAlpha)) + (dAlpha * PointAcrossBoundary);    // Initial point on decision surface
+
 
 
 
                     //Calculate the margin and compare with current largest margin
                     double dInitialMargin = (p2_Norm(TargetPoint - InitialVector)) * (p2_Norm(TargetPoint - InitialVector));
-                    double dMargin = CalculateMargin(InitialVector,TargetPoint,PointAcrossBoundary);
+                    double dMargin = CalculateMargin(InitialVector, TargetPoint, PointAcrossBoundary);
 
-                    if((dMargin == INFINITY) and (j == uNoData))
-                        {
-                        cout << "The Target point - x1:x2 is: " <<  TargetPoint[1] << ":" << TargetPoint[2] << endl;
-                        cout << "The Point across the boundary - x1:x2 is: " <<  PointAcrossBoundary[1] << ":" << PointAcrossBoundary[2] << endl;
-                        cout << "The function minimum is: " << dFuncMin << endl;
+//                    if((dMargin == INFINITY) and (j == uNoData))
+//                        {
+//                        cout << "The Target point - x1:x2 is: " <<  TargetPoint[1] << ":" << TargetPoint[2] << endl;
+//                        cout << "The Point across the boundary - x1:x2 is: " <<  PointAcrossBoundary[1] << ":" << PointAcrossBoundary[2] << endl;
+//                        cout << "The function minimum is: " << dFuncMin << endl;
 
 //                        exit(0);
-                        }
+//                        }
 
-                    // Basic check to see if COBYLA has actually done some optimisation
-                    if((dMargin > dLargestMargin) and (dFuncMin < 0.1))
+                    // Basic check to see if COBYLA has actually done some optimisation (Remember dFuncMin is the square 0f the objective function)
+                    if((dMargin > dLargestMargin) and (dFuncMin < 0.0001))
                         {
                         if(dMargin <= dInitialMargin)
                             {
@@ -592,6 +667,8 @@ double GetLargestMargin(const CHROMOSOME pstRootNode)
                             break;
 
                             }
+
+
 
 
                         }
@@ -824,7 +901,7 @@ int main(int argc, char* argv[])
 
 
     // Process command line
-    const uint32_t g_uNoInitialisationRepeats = 1;//atoi(argv[1]);  // Causes Segmentation fault if you run from IDE
+    const uint32_t g_uNoInitialisationRepeats = 15;//atoi(argv[1]);  // Causes Segmentation fault if you run from IDE
 
     if(g_uNoInitialisationRepeats < 1)
         {
